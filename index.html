@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gantt Chart — Academic Planner</title>
+  <meta name="description" content="A clean, minimalist academic Gantt chart builder with real-time updates and white-toned design." />
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Source+Serif+4:wght@400;600;700&display=swap" rel="stylesheet" />
+
+  <!-- D3.js -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            display: ['Source Serif 4', 'serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* ===================== BASE & BACKGROUND ===================== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #f4f5f7;
+      min-height: 100vh;
+      overflow-x: hidden;
+      color: #1a1a2e;
+    }
+
+    /* Subtle grid paper texture */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(180,185,200,0.18) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(180,185,200,0.18) 1px, transparent 1px);
+      background-size: 28px 28px;
+      z-index: -1;
+      pointer-events: none;
+    }
+
+    /* ===================== PANEL CARDS ===================== */
+    .glass-card {
+      background: #ffffff;
+      border: 1px solid #e2e4ea;
+      border-radius: 12px;
+      box-shadow:
+        0 1px 3px rgba(0,0,0,0.06),
+        0 4px 16px rgba(0,0,0,0.07);
+      transition: box-shadow 0.25s ease;
+    }
+
+    .glass-card:hover {
+      box-shadow:
+        0 2px 6px rgba(0,0,0,0.07),
+        0 8px 28px rgba(0,0,0,0.1);
+    }
+
+    /* ===================== SECTION HEADERS ===================== */
+    .section-title {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+      color: #8a93a8;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #e2e4ea;
+    }
+
+    /* ===================== INPUTS ===================== */
+    .glass-input {
+      width: 100%;
+      background: #f8f9fb;
+      border: 1px solid #dde0e8;
+      border-radius: 7px;
+      color: #2c3249;
+      font-size: 0.82rem;
+      font-family: 'Inter', sans-serif;
+      padding: 0.42rem 0.7rem;
+      outline: none;
+      transition: all 0.2s ease;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    .glass-input::placeholder { color: #b0b7c8; }
+
+    .glass-input:focus {
+      border-color: #3b5bdb;
+      background: #ffffff;
+      box-shadow: 0 0 0 3px rgba(59,91,219,0.1);
+    }
+
+    select.glass-input option {
+      background: #ffffff;
+      color: #2c3249;
+    }
+
+    /* Label */
+    .glass-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: #6b7494;
+      margin-bottom: 0.28rem;
+      display: block;
+      letter-spacing: 0.04em;
+    }
+
+    /* ===================== TOGGLE SWITCH ===================== */
+    .toggle-wrap { display: flex; align-items: center; gap: 0.6rem; }
+    .toggle { position: relative; display: inline-block; width: 40px; height: 21px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute; cursor: pointer; inset: 0;
+      background: #dde0e8;
+      border: 1px solid #cdd1dc;
+      border-radius: 21px;
+      transition: all 0.25s ease;
+    }
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 15px; height: 15px;
+      left: 2px; top: 2px;
+      background: #ffffff;
+      border-radius: 50%;
+      transition: all 0.25s ease;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .toggle input:checked + .toggle-slider {
+      background: #3b5bdb;
+      border-color: #3b5bdb;
+    }
+    .toggle input:checked + .toggle-slider::before {
+      transform: translateX(19px);
+    }
+    .toggle-label { font-size: 0.78rem; color: #5a6281; font-weight: 500; }
+
+    /* ===================== COLOR INPUT ===================== */
+    input[type="color"].color-pick {
+      width: 32px; height: 28px;
+      padding: 2px;
+      border: 1px solid #dde0e8;
+      border-radius: 6px;
+      background: #f8f9fb;
+      cursor: pointer;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      flex-shrink: 0;
+    }
+    input[type="color"].color-pick:hover {
+      transform: scale(1.08);
+      box-shadow: 0 0 0 2px rgba(59,91,219,0.25);
+    }
+
+    /* ===================== TASK ROWS ===================== */
+    .task-row {
+      display: grid;
+      grid-template-columns: 1fr 60px 60px 36px 28px;
+      gap: 5px;
+      align-items: center;
+      padding: 6px 8px;
+      border-radius: 8px;
+      background: #f8f9fb;
+      border: 1px solid #e8eaef;
+      transition: background 0.18s ease, box-shadow 0.18s ease;
+      animation: rowIn 0.25s ease forwards;
+    }
+
+    @keyframes rowIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .task-row:hover {
+      background: #eef1f9;
+      border-color: #c5ccdf;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+
+    .task-row .glass-input {
+      padding: 0.3rem 0.45rem;
+      font-size: 0.74rem;
+    }
+
+    .col-header {
+      font-size: 0.63rem;
+      font-weight: 700;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: #a0a9bf;
+      padding: 0 8px;
+    }
+
+    /* ===================== BUTTONS ===================== */
+    .btn-add {
+      display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+      width: 100%;
+      padding: 0.6rem 1.2rem;
+      border-radius: 8px;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      border: 1.5px dashed #a8b4d0;
+      background: transparent;
+      color: #3b5bdb;
+      cursor: pointer;
+      transition: all 0.22s ease;
+      position: relative;
+    }
+
+    .btn-add:hover {
+      border-color: #3b5bdb;
+      background: #eef1fb;
+      color: #2d4bc4;
+    }
+
+    .btn-add:active { transform: scale(0.98); }
+
+    .btn-del {
+      width: 24px; height: 24px;
+      border-radius: 6px;
+      border: 1px solid #f0c0c0;
+      background: #fdf2f2;
+      color: #c05050;
+      font-size: 0.8rem;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.18s ease;
+      flex-shrink: 0;
+    }
+
+    .btn-del:hover {
+      background: #fde8e8;
+      border-color: #e07070;
+      color: #b03030;
+      transform: scale(1.1);
+    }
+
+    /* ===================== SVG CHART AREA ===================== */
+    #chart-container {
+      width: 100%;
+      height: 100%;
+      min-height: 350px;
+      overflow: auto;
+      background: #ffffff;
+      border-radius: 8px;
+      border: 1px solid #e8eaef;
+    }
+
+    #gantt-svg { display: block; }
+
+    /* SVG classes */
+    .gantt-bar { transition: opacity 0.15s; }
+    .gantt-bar:hover { opacity: 0.78; cursor: default; }
+
+    /* ===================== SCROLLBAR ===================== */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: #f0f1f4; }
+    ::-webkit-scrollbar-thumb { background: #c5cce0; border-radius: 99px; }
+    ::-webkit-scrollbar-thumb:hover { background: #99a5c4; }
+
+    /* ===================== CHART DISPLAY TITLE ===================== */
+    .chart-title-display {
+      font-family: 'Source Serif 4', serif;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #1a2244;
+      letter-spacing: 0.01em;
+    }
+
+    /* ===================== BADGE ===================== */
+    .badge {
+      display: inline-flex; align-items: center;
+      padding: 2px 9px;
+      border-radius: 99px;
+      font-size: 0.63rem;
+      font-weight: 700;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      background: #eef1fb;
+      border: 1px solid #c5d0f0;
+      color: #3b5bdb;
+    }
+
+    /* ===================== TOOLTIP ===================== */
+    #gantt-tooltip {
+      position: fixed;
+      background: #ffffff;
+      border: 1px solid #dde0ea;
+      border-radius: 8px;
+      padding: 8px 13px;
+      font-size: 0.74rem;
+      color: #2c3249;
+      pointer-events: none;
+      z-index: 1000;
+      opacity: 0;
+      transition: opacity 0.18s ease;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      white-space: nowrap;
+      font-family: 'Inter', sans-serif;
+    }
+
+    /* ===================== DIVIDER ===================== */
+    .divider {
+      height: 1px;
+      background: #e8eaef;
+      margin: 0.25rem 0;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Tooltip -->
+  <div id="gantt-tooltip"></div>
+
+  <!-- ============================================================
+       MAIN LAYOUT
+  ============================================================ -->
+  <div class="flex h-screen max-h-screen overflow-hidden p-4 gap-4">
+
+    <!-- ======= LEFT COLUMN ======= -->
+    <div class="flex flex-col gap-4 w-64 flex-shrink-0 overflow-y-auto" style="scrollbar-width:thin;">
+
+      <!-- ── Chart Settings ── -->
+      <div class="glass-card p-5 flex flex-col gap-4">
+
+        <div>
+          <div class="section-title">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="5.5" stroke="#8a93a8"/><path d="M6 3v3l2 1" stroke="#8a93a8" stroke-linecap="round"/></svg>
+            Chart Settings
+          </div>
+        </div>
+
+        <div>
+          <label class="glass-label" for="chart-title">Chart Title</label>
+          <input id="chart-title" class="glass-input" type="text" value="Project Timeline" placeholder="Enter chart title" />
+        </div>
+
+        <div>
+          <label class="glass-label" for="x-label">X-Axis Label</label>
+          <input id="x-label" class="glass-input" type="text" value="Time" placeholder="X axis label" />
+        </div>
+
+        <div>
+          <label class="glass-label" for="y-label">Y-Axis Label</label>
+          <input id="y-label" class="glass-input" type="text" value="Components" placeholder="Y axis label" />
+        </div>
+
+        <div>
+          <label class="glass-label" for="time-unit">Time Unit</label>
+          <select id="time-unit" class="glass-input">
+            <option value="Days">Days</option>
+            <option value="Months">Months</option>
+            <option value="Years">Years</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="glass-label" for="tick-interval">Tick Interval</label>
+          <input id="tick-interval" class="glass-input" type="number" value="5" min="1" max="100" placeholder="e.g. 5" />
+        </div>
+
+        <div>
+          <label class="glass-label" for="label-font-size">Label Font Size (px)</label>
+          <input id="label-font-size" class="glass-input" type="number" value="11" min="6" max="24" placeholder="e.g. 11" />
+        </div>
+
+        <div class="toggle-wrap">
+          <label class="toggle">
+            <input type="checkbox" id="reverse-order" />
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="toggle-label">Reverse Order</span>
+        </div>
+
+      </div><!-- /settings card -->
+
+      <!-- ── About Badge ── -->
+      <div class="flex items-center justify-center pb-1">
+        <span class="badge">Gantt Planner</span>
+      </div>
+
+    </div><!-- /left column -->
+
+    <!-- ======= MIDDLE COLUMN: TASK MANAGER ======= -->
+    <div class="glass-card p-5 flex flex-col gap-3 w-80 flex-shrink-0 overflow-y-auto" style="scrollbar-width:thin;">
+
+      <div class="section-title">
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><rect x="1" y="1" width="10" height="10" rx="2" stroke="#8a93a8"/><path d="M3.5 6h5M3.5 4h5M3.5 8h3" stroke="#8a93a8" stroke-linecap="round"/></svg>
+        Task Manager
+      </div>
+
+      <!-- Column headers -->
+      <div class="grid gap-1 mb-1" style="grid-template-columns: 1fr 60px 60px 36px 28px; padding: 0 8px;">
+        <span class="col-header">Task</span>
+        <span class="col-header">Start</span>
+        <span class="col-header">End</span>
+        <span class="col-header">Color</span>
+        <span class="col-header"></span>
+      </div>
+
+      <!-- Task rows container -->
+      <div id="task-list" class="flex flex-col gap-2 overflow-y-auto flex-1" style="scrollbar-width:thin;"></div>
+
+      <!-- Add task button -->
+      <button class="btn-add mt-2" id="add-task-btn" onclick="addTask()">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <circle cx="7" cy="7" r="6.5" stroke="currentColor" stroke-opacity="0.6"/>
+          <path d="M7 4v6M4 7h6" stroke="currentColor" stroke-linecap="round"/>
+        </svg>
+        Add New Task
+      </button>
+
+    </div><!-- /task manager -->
+
+    <!-- ======= MAIN CHART PANEL ======= -->
+    <div class="glass-card flex flex-col flex-1 min-w-0 overflow-hidden p-5 gap-3">
+
+      <!-- Chart header -->
+      <div class="flex items-center justify-between flex-shrink-0 pb-3" style="border-bottom:1px solid #e8eaef;">
+        <div>
+          <h1 class="chart-title-display" id="display-title">Project Timeline</h1>
+          <p class="text-xs mt-0.5" style="color:#9aa3be; font-family:'Inter',sans-serif;">
+            Real-time Gantt Chart &nbsp;·&nbsp; <span id="task-count">0</span> tasks
+          </p>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="badge" id="unit-badge">Days</span>
+          <button onclick="exportSVG()" title="Export as SVG"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+            style="background:#f4f5f7; border:1px solid #dde0e8; color:#3b5bdb; cursor:pointer;"
+            onmouseover="this.style.background='#eef1fb'" onmouseout="this.style.background='#f4f5f7'">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 9h8M6 2v6M3.5 5L6 7.5 8.5 5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Export SVG
+          </button>
+        </div>
+      </div>
+
+      <!-- SVG chart area -->
+      <div id="chart-container" class="flex-1 min-h-0 relative" style="border-radius:8px; overflow:hidden;">
+        <svg id="gantt-svg"></svg>
+      </div>
+
+    </div><!-- /chart panel -->
+
+  </div><!-- /main layout -->
+
+  <!-- ============================================================
+       JAVASCRIPT
+  ============================================================ -->
+  <script>
+  // ── State ───────────────────────────────────────────────────
+  let tasks = [
+    { id: uid(), name: 'Components 1', start: 0,  end: 1,  color: '#8B4513' },
+    { id: uid(), name: 'Components 2', start: 2,  end: 20, color: '#87CEEB' },
+    { id: uid(), name: 'Components 3', start: 35, end: 36, color: '#C8A2C8' },
+  ];
+
+  function uid() {
+    return Math.random().toString(36).slice(2, 9);
+  }
+
+  // ── DOM refs ─────────────────────────────────────────────────
+  const chartTitleInput   = document.getElementById('chart-title');
+  const xLabelInput       = document.getElementById('x-label');
+  const yLabelInput       = document.getElementById('y-label');
+  const timeUnitSelect    = document.getElementById('time-unit');
+  const tickIntervalInput = document.getElementById('tick-interval');
+  const fontSizeInput     = document.getElementById('label-font-size');
+  const reverseCheck      = document.getElementById('reverse-order');
+  const taskListEl        = document.getElementById('task-list');
+  const displayTitle      = document.getElementById('display-title');
+  const displaySubtitle   = document.getElementById('task-count');
+  const unitBadge         = document.getElementById('unit-badge');
+  const tooltip           = document.getElementById('gantt-tooltip');
+
+  // ── Reactive update on ANY input change ──────────────────────
+  [chartTitleInput, xLabelInput, yLabelInput, timeUnitSelect,
+   tickIntervalInput, fontSizeInput, reverseCheck].forEach(el => {
+    el.addEventListener('input', () => render());
+    el.addEventListener('change', () => render());
+  });
+
+  // ── Task management ──────────────────────────────────────────
+  function addTask(task = null) {
+    const t = task || { id: uid(), name: 'New Task', start: 0, end: 10, color: randomColor() };
+    tasks.push(t);
+    renderTaskList();
+    render();
+  }
+
+  function deleteTask(id) {
+    tasks = tasks.filter(t => t.id !== id);
+    renderTaskList();
+    render();
+  }
+
+  function randomColor() {
+    const palette = ['#3b5bdb','#1971c2','#0c8599','#2f9e44','#e67700','#c2255c','#862e9c','#5c7cfa'];
+    return palette[Math.floor(Math.random() * palette.length)];
+  }
+
+  function renderTaskList() {
+    taskListEl.innerHTML = '';
+    tasks.forEach((t, i) => {
+      const row = document.createElement('div');
+      row.className = 'task-row';
+      row.dataset.id = t.id;
+      row.innerHTML = `
+        <input type="text"   class="glass-input task-name"  value="${escHtml(t.name)}"  placeholder="Task name" />
+        <input type="number" class="glass-input task-start" value="${t.start}" min="0" placeholder="0" />
+        <input type="number" class="glass-input task-end"   value="${t.end}"   min="0" placeholder="10" />
+        <input type="color"  class="color-pick task-color"  value="${t.color}" />
+        <button class="btn-del" title="Delete task">×</button>
+      `;
+
+      // Bind events
+      row.querySelector('.task-name').addEventListener('input', e => {
+        t.name = e.target.value; render();
+      });
+      row.querySelector('.task-start').addEventListener('input', e => {
+        t.start = parseFloat(e.target.value) || 0; render();
+      });
+      row.querySelector('.task-end').addEventListener('input', e => {
+        t.end = parseFloat(e.target.value) || 0; render();
+      });
+      row.querySelector('.task-color').addEventListener('input', e => {
+        t.color = e.target.value; render();
+      });
+      row.querySelector('.btn-del').addEventListener('click', () => {
+        row.style.animation = 'none';
+        row.style.opacity = '0';
+        row.style.transform = 'translateY(-8px)';
+        setTimeout(() => deleteTask(t.id), 200);
+      });
+
+      taskListEl.appendChild(row);
+    });
+  }
+
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Gantt Render (D3) ─────────────────────────────────────────
+  function render() {
+    const title       = chartTitleInput.value || 'Project Timeline';
+    const xLabel      = xLabelInput.value || '';
+    const yLabel      = yLabelInput.value || '';
+    const timeUnit    = timeUnitSelect.value;
+    const tickInterval= Math.max(1, parseInt(tickIntervalInput.value) || 5);
+    const fontSize    = Math.max(6, Math.min(24, parseInt(fontSizeInput.value) || 11));
+    const reversed    = reverseCheck.checked;
+
+    // Update header
+    displayTitle.textContent = title;
+    displaySubtitle.textContent = tasks.length;
+    unitBadge.textContent = timeUnit;
+
+    const container = document.getElementById('chart-container');
+    const W = container.clientWidth  || 600;
+    const H = container.clientHeight || 400;
+
+    // Margins
+    const marginTop    = 60;
+    const marginRight  = 30;
+    const marginBottom = xLabel ? 60 : 45;
+    const marginLeft   = yLabel ? 160 : 140;
+
+    const innerW = W - marginLeft - marginRight;
+    const innerH = H - marginTop  - marginBottom;
+
+    // Gather data
+    let data = tasks.map(t => ({ ...t }));
+    if (reversed) data = [...data].reverse();
+
+    // Domains
+    const allStarts = data.map(d => d.start);
+    const allEnds   = data.map(d => d.end);
+    const xMin = data.length ? Math.min(...allStarts) : 0;
+    const xMax = data.length ? Math.max(...allEnds)   : 10;
+
+    // Scales
+    const xScale = d3.scaleLinear()
+      .domain([xMin, xMax === xMin ? xMin + 1 : xMax])
+      .range([0, innerW])
+      .nice();
+
+    const yScale = d3.scaleBand()
+      .domain(data.map(d => d.name))
+      .range([0, innerH])
+      .paddingInner(0.35)
+      .paddingOuter(0.2);
+
+    const barHeight = yScale.bandwidth();
+
+    // SVG setup
+    const svg = d3.select('#gantt-svg')
+      .attr('width', W)
+      .attr('height', H)
+      .attr('xmlns', 'http://www.w3.org/2000/svg');
+
+    svg.selectAll('*').remove();
+
+    // Defs: gradient & clip
+    const defs = svg.append('defs');
+
+    // Background rect for the SVG itself
+    svg.append('rect')
+      .attr('width', W).attr('height', H)
+      .attr('fill', '#ffffff');
+
+    // Chart group
+    const g = svg.append('g')
+      .attr('transform', `translate(${marginLeft},${marginTop})`);
+
+    // ── Grid lines ──
+    const xTicks = xScale.ticks(Math.floor(innerW / (tickInterval * 8 + 20)));
+
+    g.append('g')
+      .attr('class', 'gantt-grid')
+      .selectAll('line')
+      .data(xTicks)
+      .join('line')
+        .attr('x1', d => xScale(d)).attr('x2', d => xScale(d))
+        .attr('y1', 0).attr('y2', innerH)
+        .attr('stroke', 'rgba(100,110,140,0.12)')
+        .attr('stroke-dasharray', '4,4');
+
+    // Horizontal band alternating fill
+    data.forEach((d, i) => {
+      g.append('rect')
+        .attr('x', 0).attr('y', yScale(d.name) - yScale.paddingInner() * barHeight * 0.5)
+        .attr('width', innerW)
+        .attr('height', barHeight + yScale.paddingInner() * barHeight * 0.5)
+        .attr('fill', i % 2 === 0 ? 'rgba(59,91,219,0.03)' : 'transparent');
+    });
+
+    // ── X Axis ──
+    const xAxis = d3.axisBottom(xScale)
+      .tickValues(d3.range(
+        Math.ceil(xScale.domain()[0] / tickInterval) * tickInterval,
+        xScale.domain()[1] + tickInterval,
+        tickInterval
+      ).filter(v => v <= xScale.domain()[1] + 0.001))
+      .tickSize(5)
+      .tickFormat(d => `${d}`);
+
+    g.append('g')
+      .attr('class', 'axis-line')
+      .attr('transform', `translate(0,${innerH})`)
+      .call(xAxis)
+      .call(ag => {
+        ag.select('.domain').attr('stroke', '#d0d4e0');
+        ag.selectAll('line').attr('stroke', '#d0d4e0');
+        ag.selectAll('text').attr('fill', '#6b7494').style('font-size', `${fontSize}px`).style('font-family', 'Inter, sans-serif');
+      });
+
+    // ── Y Axis ──
+    const yAxis = d3.axisLeft(yScale)
+      .tickSize(0);
+
+    g.append('g')
+      .attr('class', 'axis-line')
+      .call(yAxis)
+      .call(ag => {
+        ag.select('.domain').attr('stroke', '#d0d4e0');
+        ag.selectAll('text')
+          .attr('fill', '#2c3249')
+          .style('font-size', `${fontSize}px`)
+          .style('font-family', 'Inter, sans-serif')
+          .attr('x', -10)
+          .attr('dy', '0.35em');
+      });
+
+    // ── Chart border ──
+    g.append('rect')
+      .attr('width', innerW).attr('height', innerH)
+      .attr('fill', 'none')
+      .attr('stroke', '#d0d4e0')
+      .attr('stroke-width', 1)
+      .attr('rx', 3);
+
+    // ── Bars ──
+    if (data.length > 0) {
+      const barGroups = g.selectAll('.bar-group')
+        .data(data)
+        .join('g')
+          .attr('class', 'bar-group');
+
+      // Bar gradient defs per task
+      data.forEach(d => {
+        const lg = defs.append('linearGradient')
+          .attr('id', `bar-grad-${d.id}`)
+          .attr('x1', '0%').attr('y1', '0%')
+          .attr('x2', '0%').attr('y2', '100%');
+        lg.append('stop').attr('offset', '0%')
+          .attr('stop-color', d3.color(d.color) ? lighten(d.color, 0.35) : d.color);
+        lg.append('stop').attr('offset', '100%')
+          .attr('stop-color', d.color);
+      });
+
+      barGroups.append('rect')
+        .attr('class', 'gantt-bar')
+        .attr('x', d => xScale(Math.min(d.start, d.end)))
+        .attr('y', d => yScale(d.name))
+        .attr('width', d => Math.max(2, xScale(Math.max(d.start, d.end)) - xScale(Math.min(d.start, d.end))))
+        .attr('height', barHeight)
+        .attr('rx', Math.min(6, barHeight * 0.25))
+        .attr('fill', d => `url(#bar-grad-${d.id})`)
+        .attr('stroke', d => lighten(d.color, 0.5))
+        .attr('stroke-width', 0.8)
+        .attr('stroke-opacity', 0.6)
+        .on('mousemove', function(event, d) {
+          const dur = Math.abs(d.end - d.start);
+          tooltip.style.opacity = '1';
+          tooltip.style.left = (event.clientX + 14) + 'px';
+          tooltip.style.top  = (event.clientY - 10) + 'px';
+          tooltip.innerHTML = `
+            <div style="font-weight:600; color:#1a2244; margin-bottom:3px;">${escHtml(d.name)}</div>
+            <div style="color:#6b7494;">Start: <span style="color:#2c3249">${d.start} ${timeUnit}</span></div>
+            <div style="color:#6b7494;">End: <span style="color:#2c3249">${d.end} ${timeUnit}</span></div>
+            <div style="color:#6b7494;">Duration: <span style="color:#3b5bdb; font-weight:600;">${dur} ${timeUnit}</span></div>
+          `;
+        })
+        .on('mouseleave', () => { tooltip.style.opacity = '0'; });
+
+      // Bar value labels (duration)
+      barGroups.append('text')
+        .attr('x', d => {
+          const x0 = xScale(Math.min(d.start, d.end));
+          const x1 = xScale(Math.max(d.start, d.end));
+          return x0 + (x1 - x0) / 2;
+        })
+        .attr('y', d => yScale(d.name) + barHeight / 2)
+        .attr('dy', '0.35em')
+        .attr('text-anchor', 'middle')
+        .attr('fill', 'rgba(255,255,255,0.9)')
+        .attr('font-size', `${Math.min(fontSize, barHeight * 0.65)}px`)
+        .attr('font-family', 'Inter, sans-serif')
+        .attr('font-weight', '600')
+        .attr('pointer-events', 'none')
+        .text(d => {
+          const barPx = Math.max(2, xScale(Math.max(d.start,d.end)) - xScale(Math.min(d.start,d.end)));
+          const dur = Math.abs(d.end - d.start);
+          const label = `${dur} ${timeUnit}`;
+          // Only show if bar is wide enough
+          return barPx > label.length * (fontSize * 0.55) + 8 ? label : (barPx > 20 ? `${dur}` : '');
+        });
+    }
+
+    // ── Empty state ──
+    if (data.length === 0) {
+      g.append('text')
+        .attr('x', innerW / 2).attr('y', innerH / 2)
+        .attr('text-anchor', 'middle')
+        .attr('fill', '#b0b7c8')
+        .attr('font-size', '13px')
+        .attr('font-family', 'Inter, sans-serif')
+        .text('No tasks yet — add one using the panel');
+    }
+
+    // ── X Axis Label ──
+    if (xLabel) {
+      svg.append('text')
+        .attr('x', marginLeft + innerW / 2)
+        .attr('y', H - 10)
+        .attr('text-anchor', 'middle')
+        .attr('fill', '#6b7494')
+        .attr('font-size', `${fontSize + 1}px`)
+        .attr('font-family', 'Inter, sans-serif')
+        .attr('font-weight', '600')
+        .text(xLabel);
+    }
+
+    // ── Y Axis Label ──
+    if (yLabel) {
+      svg.append('text')
+        .attr('transform', `translate(${14}, ${marginTop + innerH / 2}) rotate(-90)`)
+        .attr('text-anchor', 'middle')
+        .attr('fill', '#6b7494')
+        .attr('font-size', `${fontSize + 1}px`)
+        .attr('font-family', 'Inter, sans-serif')
+        .attr('font-weight', '600')
+        .text(yLabel);
+    }
+
+    // ── Chart Title ──
+    svg.append('text')
+      .attr('x', marginLeft + innerW / 2)
+      .attr('y', 32)
+      .attr('text-anchor', 'middle')
+      .attr('fill', '#1a2244')
+      .attr('font-size', `${fontSize + 5}px`)
+      .attr('font-family', 'Source Serif 4, serif')
+      .attr('font-weight', '700')
+      .attr('letter-spacing', '0.01em')
+      .text(title);
+
+    // ── X-axis unit annotation ──
+    svg.append('text')
+      .attr('x', marginLeft + innerW)
+      .attr('y', H - marginBottom + 35)
+      .attr('text-anchor', 'end')
+      .attr('fill', 'rgba(130,100,255,0.7)')
+      .attr('font-size', `${fontSize}px`)
+      .attr('font-family', 'Inter, sans-serif')
+      .attr('font-style', 'italic')
+      .text(`(${timeUnit})`);
+  }
+
+  // Color utility
+  function lighten(hex, amount) {
+    try {
+      const c = d3.color(hex);
+      if (!c) return hex;
+      c.r = Math.min(255, c.r + (255 - c.r) * amount);
+      c.g = Math.min(255, c.g + (255 - c.g) * amount);
+      c.b = Math.min(255, c.b + (255 - c.b) * amount);
+      return c.formatHex();
+    } catch(e) { return hex; }
+  }
+
+  // ── Export SVG ────────────────────────────────────────────────
+  function exportSVG() {
+    const svgEl = document.getElementById('gantt-svg');
+    const serializer = new XMLSerializer();
+    let src = serializer.serializeToString(svgEl);
+    // Inject font
+    src = src.replace('<svg', '<svg xmlns:xlink="http://www.w3.org/1999/xlink"');
+    const blob = new Blob([src], { type: 'image/svg+xml;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = (chartTitleInput.value || 'gantt') + '.svg';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ── Resize observer ───────────────────────────────────────────
+  const ro = new ResizeObserver(() => render());
+  ro.observe(document.getElementById('chart-container'));
+
+  // ── Init ──────────────────────────────────────────────────────
+  renderTaskList();
+  render();
+  </script>
+</body>
+</html>
