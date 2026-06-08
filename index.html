@@ -583,17 +583,27 @@
     unitBadge.textContent = timeUnit;
 
     const container = document.getElementById('chart-container');
-    const W = container.clientWidth  || 600;
-    const H = container.clientHeight || 400;
+    let W = container.clientWidth  || 600;
+    let H = container.clientHeight || 400;
+
+    // Calculate dynamic left margin based on longest task name
+    const maxChars = tasks.length > 0 ? Math.max(...tasks.map(t => (t.name || '').length)) : 10;
+    const estimatedNameWidth = maxChars * (fontSize * 0.65);
 
     // Margins
     const marginTop    = 60;
     const marginRight  = 30;
     const marginBottom = xLabel ? 60 : 45;
-    const marginLeft   = yLabel ? 160 : 140;
+    const marginLeft   = Math.max(yLabel ? 160 : 140, estimatedNameWidth + (yLabel ? 50 : 30));
+
+    // Ensure chart has a minimum inner width so it doesn't get squished
+    const minInnerW = 300;
+    if (W < marginLeft + minInnerW + marginRight) {
+      W = marginLeft + minInnerW + marginRight;
+    }
 
     const innerW = W - marginLeft - marginRight;
-    const innerH = H - marginTop  - marginBottom;
+    const innerH = Math.max(50, H - marginTop  - marginBottom);
 
     // Gather data
     let data = tasks.map(t => ({ ...t }));
